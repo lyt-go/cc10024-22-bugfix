@@ -61,36 +61,51 @@ def test_script_to_schedule_flow():
 
 
 def test_selector_script_validation():
-    """测试element_selector标记生效时校验关联脚本。"""
+    """测试element_selector标记生效时校验关联脚本与采集字段绑定。"""
     from app.store import store
     from app.services.element_selector import ElementSelectorService
+    from app.services.data_extract import DataExtractService
     from app import persistence as persist
+    from app import bindings
+
+    # 先为TEST-001补一个已生效的采集字段绑定（抽取模板）
+    extract_svc = DataExtractService()
+    t_entry, _ = extract_svc.create_entry({
+        "模板编号": "TEST-EXTRACT-001",
+        "关联脚本": "TEST-001",
+        "抽取字段": "title",
+    })
+    assert t_entry is not None
+    extract_svc.run_action(t_entry["id"], "标记生效")
 
     svc = ElementSelectorService()
     # 创建选择器
     entry, missing = svc.create_entry({
         "锚点编号": "TEST-SEL-001",
         "关联脚本": "TEST-001",
-        "选择器类型": "CSS"
+        "选择器类型": "CSS",
+        "CSS表达式": "div.title",
     })
     assert entry is not None
     sel_id = entry["id"]
 
-    # 标记生效（关联脚本TEST-001已生效）
+    # 标记生效（关联脚本TEST-001已生效且有采集字段绑定）
     result, _ = svc.run_action(sel_id, "标记生效")
     assert result is not None
     assert result["status"] == "已生效"
     # 关联脚本已生效，不应标记为abnormal
     assert not result.get("abnormal"), f"预期不异常但实际为abnormal={result.get('abnormal')}"
 
-    # 验证快照文件写入
-    snap_path = persist.data_path("snapshots", f"selector_{sel_id}.json")
-    assert os.path.exists(snap_path), f"快照文件未创建: {snap_path}"
-    with open(snap_path) as f:
-        snap = json.load(f)
-        assert snap["selector_type"] == "CSS"
-        assert snap["linked_script"] == "TEST-001"
-        assert snap["script_active"] == True
+    # 验证绑定快照文件写入并带确认归属
+    binding_version = result.get("binding_version", "")
+    assert binding_version, "已生效锚点必须回填绑定版本"
+    snapshot = bindings.load_binding(binding_version)
+    assert snapshot is not None, f"绑定快照未完整持久化: {binding_version}"
+    assert snapshot["selector_type"] == "CSS"
+    assert snapshot["css_expr"] == "div.title"
+    assert snapshot["linked_script"] == "TEST-001"
+    assert snapshot["script_active"] is True
+    assert snapshot["field_bindings"] and snapshot["field_bindings"][0]["field"] == "title"
 
     # domain_snapshot检查
     snap_report = svc.domain_snapshot()

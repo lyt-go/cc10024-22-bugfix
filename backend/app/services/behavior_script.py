@@ -27,6 +27,10 @@ def _auto_schedule_on_active(entry: dict[str, Any]) -> None:
         "pending": True,
         "abnormal": False,
         "version": "",
+        # 脚本激活只生成计划骨架；绑定版本须经锚点快照编排补齐，未补齐前不可启动。
+        "binding_status": "未绑定",
+        "binding_versions": [],
+        "binding_refs": [],
         "updated_at": persist.now_iso(),
     }
     schedule_rows.append(schedule)
